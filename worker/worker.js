@@ -1,9 +1,16 @@
-const amqp = require('amqplib');
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const nodemailer = require('nodemailer');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+import amqp from "amqplib";
+import dotenv from "dotenv"
+import { v4 as uuidv4 } from "uuid";
+import path from "path";
+import nodemailer from "nodemailer";
+import PDFDocument from "pdfkit";
+import fs from "fs";
+import { dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+dotenv.config()
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
 
@@ -27,13 +34,13 @@ async function sendEmail(to, attachment) {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-      user: 'your.email@gmail.com',
-      pass: 'your_app_password'
+      user: 'mariaferreira.developer@gmail.com',
+      pass: process.env.APP_PASSWORD
     }
   });
 
   await transporter.sendMail({
-    from: 'your.email@gmail.com',
+    from: 'mariaferreira.developer@gmail.com',
     to,
     subject: 'PDF Report',
     text: 'Here is your PDF report.',
@@ -41,8 +48,25 @@ async function sendEmail(to, attachment) {
   });
 }
 
+async function waitForRabbitMQ(url, retries = 10, delay = 3000) {
+  while (retries > 0) {
+    try {
+      const conn = await amqp.connect(url);
+      console.log("RabbitMQ is ready.");
+      return conn;
+    } catch (err) {
+      console.log(`Waiting for RabbitMQ... (${retries} retries left)`);
+      await new Promise(res => setTimeout(res, delay));
+      retries--;
+    }
+  }
+  throw new Error("RabbitMQ connection failed after retries");
+}
+
+
 async function startWorker() {
-  const conn = await amqp.connect(RABBITMQ_URL);
+  const conn = await waitForRabbitMQ(RABBITMQ_URL);
+
   const channel = await conn.createChannel();
 
   await channel.assertQueue('pdf_jobs', {
@@ -54,7 +78,7 @@ async function startWorker() {
   await channel.assertQueue('pdf_dlq', { durable: true });
 
   channel.prefetch(1);
-  console.log('👷 Worker listening for jobs...');
+  console.log('Worker listening for jobs...');
 
   channel.consume('pdf_jobs', async (msg) => {
     const job = JSON.parse(msg.content.toString());
@@ -63,16 +87,16 @@ async function startWorker() {
     try {
       await generatePDF(job.users, filePath);
       await sendEmail(job.email, filePath);
-      console.log('✅ Job done:', job.email);
+      console.log('Job done:', job.email);
       channel.ack(msg);
     } catch (err) {
-      console.error('❌ Job failed:', err.message);
+      console.error('Job failed:', err.message);
       channel.nack(msg, false, false); // send to DLQ
     }
   });
 
   channel.consume('pdf_dlq', (msg) => {
-    console.warn('🪦 DLQ received message:', msg.content.toString());
+    console.warn('DLQ received message:', msg.content.toString());
     channel.ack(msg); // optional: store for audit/log
   });
 }

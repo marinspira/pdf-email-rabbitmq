@@ -22,3 +22,5 @@ services:
     build: ./worker
     depends_on:
       - rabbitmq
+    environment:
+      - RABBITMQ_URL=amqp://rabbitmq

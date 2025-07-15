@@ -10,7 +10,7 @@ This project provides a scalable and robust system for generating dynamic PDF re
 
 ---
 
-## 📦 Features
+## Features
 
 - REST API to accept PDF generation requests
 - Background processing via RabbitMQ
@@ -21,7 +21,7 @@ This project provides a scalable and robust system for generating dynamic PDF re
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Clone the Repository
 ```bash

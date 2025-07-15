@@ -1,16 +1,33 @@
-const express = require('express');
-const amqp = require('amqplib');
-const bodyParser = require('body-parser');
+import express from 'express';
+import amqp from 'amqplib';
+import bodyParser from 'body-parser';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 app.use(bodyParser.json());
 
 const RABBITMQ_URL = process.env.RABBITMQ_URL || 'amqp://localhost';
-
 let channel;
 
+async function waitForRabbitMQ(url, retries = 10, delay = 3000) {
+  while (retries > 0) {
+    try {
+      const conn = await amqp.connect(url);
+      console.log('RabbitMQ connected');
+      return conn;
+    } catch (err) {
+      console.log(`⏳ Waiting for RabbitMQ... (${retries} retries left)`);
+      await new Promise(res => setTimeout(res, delay));
+      retries--;
+    }
+  }
+  throw new Error('RabbitMQ connection failed after retries');
+}
+
 async function connectRabbit() {
-  const conn = await amqp.connect(RABBITMQ_URL);
+  const conn = await waitForRabbitMQ(RABBITMQ_URL);
   channel = await conn.createChannel();
 
   await channel.assertQueue('pdf_jobs', {
@@ -20,7 +37,6 @@ async function connectRabbit() {
   });
 
   await channel.assertQueue('pdf_dlq', { durable: true });
-  console.log('📦 RabbitMQ connected');
 }
 
 app.post('/generate', async (req, res) => {
@@ -38,8 +54,13 @@ app.post('/generate', async (req, res) => {
   res.status(202).json({ message: 'Job queued' });
 });
 
-connectRabbit().then(() => {
-  app.listen(3000, () => {
-    console.log('🚀 API running on http://localhost:3000');
+connectRabbit()
+  .then(() => {
+    app.listen(3000, () => {
+      console.log('API running at http://localhost:3000');
+    });
+  })
+  .catch(err => {
+    console.error('Failed to start API:', err.message);
+    process.exit(1);
   });
-});
